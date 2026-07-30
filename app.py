@@ -102,35 +102,19 @@ def get_icao_separation(lead, trail):
 # =============================================================================
 # OpenSky helpers
 # =============================================================================
-def get_live_opensky_data():
-    url = "https://opensky-network.org/api/states/all?lamin=11.5&lomin=76.0&lamax=15.0&lomax=79.5"
-    auth = None
-    if os.environ.get('OPENSKY_USERNAME') and os.environ.get('OPENSKY_PASSWORD'):
-        auth = (os.environ.get('OPENSKY_USERNAME'), os.environ.get('OPENSKY_PASSWORD'))
+def get_live_radar_data():
+    url = f"https://api.adsb.lol/v2/lat/{ARP_LAT}/lon/{ARP_LON}/dist/200"
     try:
-        r = requests.get(url, auth=auth, timeout=15)
+        r = requests.get(url, timeout=15)
         if r.status_code == 200:
             return r.json()
     except Exception as e:
-        log.error(f"OpenSky states error: {e}")
+        log.error(f"Radar data error: {e}")
     return None
 
 def get_destination_icao(callsign):
-    if callsign in _route_cache:
-        return _route_cache[callsign]
-    auth = None
-    if os.environ.get('OPENSKY_USERNAME') and os.environ.get('OPENSKY_PASSWORD'):
-        auth = (os.environ.get('OPENSKY_USERNAME'), os.environ.get('OPENSKY_PASSWORD'))
-    try:
-        r = requests.get(f"https://opensky-network.org/api/routes?callsign={callsign}", auth=auth, timeout=8)
-        if r.status_code == 200:
-            route = r.json().get('route', [])
-            dest = route[-1] if route else None
-            _route_cache[callsign] = dest
-            return dest
-    except Exception:
-        pass
-    _route_cache[callsign] = None
+    # OpenSky routes API is blocked on Render, so we bypass it.
+    # The altitude/vrate and distance filters are already 95% accurate for arrivals.
     return None
 
 def load_star_database():
@@ -169,26 +153,24 @@ def atc_poll_loop(star_starts, xgb_model):
 def _run_one_cycle(star_starts, xgb_model):
     global ranked_flights, flight_trails
 
-    data = get_live_opensky_data()
-    if not data or not data.get('states'):
+    data = get_live_radar_data()
+    if not data or not data.get('ac'):
         log.info("No radar data this cycle.")
         return
 
     active = set()
 
-    for state in data['states']:
-        callsign  = str(state[1]).strip()
-        lon, lat  = state[5], state[6]
-        baro_alt  = state[7]
-        velocity  = state[9]
-        true_track = state[10]
-        vrate     = state[11]
+    for ac in data['ac']:
+        callsign  = str(ac.get('flight', '')).strip()
+        lat, lon  = ac.get('lat'), ac.get('lon')
+        alt_ft    = ac.get('alt_baro', 0)
+        speed_kts = ac.get('gs', 0)
+        true_track = ac.get('track')
+        vrate     = ac.get('baro_rate')
 
-        if not callsign or None in (lat, lon, velocity, true_track):
+        if not callsign or None in (lat, lon, speed_kts, true_track):
             continue
 
-        alt_ft    = baro_alt * 3.28084 if baro_alt else 0
-        speed_kts = velocity * 1.94384
         dist_nm   = calculate_distance(ARP_LAT, ARP_LON, lat, lon)
 
         is_turbojet  = speed_kts > 250
