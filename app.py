@@ -163,10 +163,22 @@ def _run_one_cycle(star_starts, xgb_model):
     for ac in data['ac']:
         callsign  = str(ac.get('flight', '')).strip()
         lat, lon  = ac.get('lat'), ac.get('lon')
-        alt_ft    = ac.get('alt_baro', 0)
-        speed_kts = ac.get('gs', 0)
         true_track = ac.get('track')
-        vrate     = ac.get('baro_rate')
+
+        try:
+            alt_ft = float(ac.get('alt_baro', 0))
+        except (ValueError, TypeError):
+            alt_ft = 0
+
+        try:
+            speed_kts = float(ac.get('gs', 0))
+        except (ValueError, TypeError):
+            speed_kts = 0
+
+        try:
+            vrate = float(ac.get('baro_rate', 0))
+        except (ValueError, TypeError):
+            vrate = 0
 
         if not callsign or None in (lat, lon, speed_kts, true_track):
             continue
