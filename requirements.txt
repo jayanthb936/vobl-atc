@@ -1,0 +1,10 @@
+flask==3.1.1
+xgboost==3.3.0
+folium==0.20.0
+branca==0.8.2
+ortools==9.15.6755
+pandas==3.0.5
+numpy==2.5.1
+requests==2.34.2
+scikit-learn==1.9.0
+gunicorn==23.0.0
