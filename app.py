@@ -113,8 +113,21 @@ def get_live_radar_data():
     return None
 
 def get_destination_icao(callsign):
-    # OpenSky routes API is blocked on Render, so we bypass it.
-    # The altitude/vrate and distance filters are already 95% accurate for arrivals.
+    if callsign in _route_cache:
+        return _route_cache[callsign]
+    auth = None
+    if os.environ.get('OPENSKY_USERNAME') and os.environ.get('OPENSKY_PASSWORD'):
+        auth = (os.environ.get('OPENSKY_USERNAME'), os.environ.get('OPENSKY_PASSWORD'))
+    try:
+        r = requests.get(f"https://opensky-network.org/api/routes?callsign={callsign}", auth=auth, timeout=5)
+        if r.status_code == 200:
+            route = r.json().get('route', [])
+            dest = route[-1] if route else None
+            _route_cache[callsign] = dest
+            return dest
+    except Exception:
+        pass
+    _route_cache[callsign] = None
     return None
 
 def load_star_database():
@@ -194,6 +207,7 @@ def _run_one_cycle(star_starts, xgb_model):
         if not (5 < dist_nm <= trigger_ring):
             continue
 
+        # Use OpenSky destination filter as requested
         dest = get_destination_icao(callsign)
         if dest and dest != 'VOBL':
             continue
@@ -236,7 +250,9 @@ def _run_one_cycle(star_starts, xgb_model):
             features[f'STAR_{s}'] = [1 if closest_star == s else 0]
 
         eta_seconds = max(float(xgb_model.predict(pd.DataFrame(features))[0]), 60.0)
-        score = (eta_seconds*0.5 + dist_nm*10*0.3 + (alt_ft/10)*0.2 + heading_diff*2.0)
+        
+        # Score is purely the ML predicted ETA.
+        score = eta_seconds
 
         ranked_flights[callsign] = {
             'callsign': callsign, 'lat': lat, 'lon': lon,
