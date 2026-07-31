@@ -8,3 +8,4 @@ numpy==2.5.1
 requests==2.34.2
 scikit-learn==1.9.0
 gunicorn==23.0.0
+FlightRadarAPI==1.5.1

@@ -17,6 +17,10 @@ import numpy as np
 import pandas as pd
 import requests
 import folium
+from FlightRadarAPI import FlightRadar24API
+
+# Initialize Flightradar24
+fr_api = FlightRadar24API()
 import xgboost as xgb
 from branca.element import Template, MacroElement
 from ortools.sat.python import cp_model
@@ -115,18 +119,24 @@ def get_live_radar_data():
 def get_destination_icao(callsign):
     if callsign in _route_cache:
         return _route_cache[callsign]
-    auth = None
-    if os.environ.get('OPENSKY_USERNAME') and os.environ.get('OPENSKY_PASSWORD'):
-        auth = (os.environ.get('OPENSKY_USERNAME'), os.environ.get('OPENSKY_PASSWORD'))
+    
     try:
-        r = requests.get(f"https://opensky-network.org/api/routes?callsign={callsign}", auth=auth, timeout=5)
-        if r.status_code == 200:
-            route = r.json().get('route', [])
-            dest = route[-1] if route else None
-            _route_cache[callsign] = dest
-            return dest
-    except Exception:
+        # Extract airline code (usually first 3 letters)
+        airline_code = callsign[:3] if len(callsign) >= 3 and callsign[:3].isalpha() else callsign[:2]
+        
+        flights = fr_api.get_flights(airline=airline_code)
+        for f in flights:
+            if f.callsign == callsign:
+                details = fr_api.get_flight_details(f)
+                dest = details.get('airport', {}).get('destination', {}).get('code', {}).get('icao')
+                if dest:
+                    _route_cache[callsign] = dest
+                    return dest
+                break
+    except Exception as e:
+        log.error(f"FR24 error for {callsign}: {e}")
         pass
+        
     _route_cache[callsign] = None
     return None
 
@@ -207,7 +217,7 @@ def _run_one_cycle(star_starts, xgb_model):
         if not (5 < dist_nm <= trigger_ring):
             continue
 
-        # Use OpenSky destination filter as requested
+        # Use Flightradar24 destination filter
         dest = get_destination_icao(callsign)
         if dest and dest != 'VOBL':
             continue
